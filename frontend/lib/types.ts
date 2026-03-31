@@ -8,6 +8,7 @@ export interface UserProfile {
   targetBg: number;          // Target blood glucose in mg/dL
   correctionThreshold?: number; // BG at which to start correcting (if different from target)
   rounding?: number;         // Rounding increment (0.1, 0.5, 1.0)
+  model?: string;            // Selected AI model for text operations
 }
 
 export interface NutritionData {

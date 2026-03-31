@@ -224,6 +224,28 @@ export function ProfilePanel({
                 <option value={1.0}>Enteras (1.0 U)</option>
               </select>
             </div>
+
+            {/* Model Selection */}
+            <div className="space-y-0.5 col-span-2 mt-1" suppressHydrationWarning>
+              <label className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                <Settings2 className="h-2.5 w-2.5" />
+                Modelo de IA (Textos)
+              </label>
+              <select
+                suppressHydrationWarning
+                value={profile.model || "llama-3.1-8b-instant"}
+                onChange={(e) =>
+                  onProfileChange({ ...profile, model: e.target.value })
+                }
+                className="flex h-7 w-full rounded-md border border-input bg-background/30 px-2 py-1 text-[10px] focus:outline-none"
+              >
+                <option value="llama-3.1-8b-instant" suppressHydrationWarning>Llama 3.1 8B (Más Rápido/Liviano)</option>
+                <option value="openai/gpt-oss-20b" suppressHydrationWarning>GPT OSS 20B (Equilibrado/Eficiente)</option>
+                <option value="qwen/qwen3-32b" suppressHydrationWarning>Qwen3 32B (Eficiente/Alternativo)</option>
+                <option value="llama-3.3-70b-versatile" suppressHydrationWarning>Llama 3.3 70B (Más Inteligente)</option>
+                <option value="openai/gpt-oss-120b" suppressHydrationWarning>GPT OSS 120B (Extremo/Insano)</option>
+              </select>
+            </div>
           </div>
         </div>
 

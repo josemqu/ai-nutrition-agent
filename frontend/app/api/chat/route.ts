@@ -29,15 +29,21 @@ function htmlToText(html: string): string {
 }
 
 function extractMainContent(html: string): string {
+  let preText = "";
+  const jsonMatches = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  if (jsonMatches.length > 0) {
+    preText = "METADATOS JSON-LD ENCONTRADOS:\n" + jsonMatches.map(m => m[1]).join("\n") + "\n\nTEXTO DE LA PÁGINA:\n";
+  }
+
   const articleMatch = html.match(/<(?:article|main)[^>]*>([\s\S]*?)<\/(?:article|main)>/i);
-  if (articleMatch) return htmlToText(articleMatch[1]);
+  if (articleMatch) return preText + htmlToText(articleMatch[1]);
 
   const contentMatch = html.match(
     /<div[^>]*(?:class|id)="[^"]*(?:recipe|content|post|entry|article|ingrediente|preparacion)[^"]*"[^>]*>([\s\S]{200,}?)<\/div>/i
   );
-  if (contentMatch) return htmlToText(contentMatch[1]);
+  if (contentMatch) return preText + htmlToText(contentMatch[1]);
 
-  return htmlToText(html);
+  return preText + htmlToText(html);
 }
 
 async function fetchUrlContent(url: string): Promise<string> {
@@ -255,7 +261,7 @@ export async function POST(req: NextRequest) {
     // Note: llama-3.2-11b-vision-preview is the currently available vision model on Groq
     const model = imageData 
       ? "llama-3.2-11b-vision-preview" 
-      : "llama-3.1-8b-instant";
+      : (profile.model || "llama-3.1-8b-instant");
 
     if (imageData) {
       // Vision API format

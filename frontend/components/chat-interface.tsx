@@ -21,22 +21,24 @@ const DEFAULT_PROFILE: UserProfile = {
   targetBg: 100,
   correctionThreshold: 100,
   rounding: 0.1,
+  model: "llama-3.1-8b-instant",
 };
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const WELCOME_MESSAGE: ChatMessage = {
+const WELCOME_MESSAGE_TEMPLATE: Omit<ChatMessage, "timestamp"> = {
   id: "welcome",
   role: "assistant",
   content:
     "¡Hola! Soy **NutriAgent DM1**, tu asistente nutricional especializado en Diabetes Tipo 1.\n\nPuedo ayudarte a:\n• Calcular los carbohidratos de cualquier alimento o receta\n• Estimar el índice glucémico\n• Calcular tu dosis de insulina rápida\n\nConfigurá tu perfil de insulina en el panel lateral y contame **¿qué vas a comer?**",
-  timestamp: new Date(),
 };
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { ...WELCOME_MESSAGE_TEMPLATE, timestamp: new Date() },
+  ]);
   const [input, setInput] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -331,9 +333,12 @@ export function ChatInterface() {
   };
 
   const handleReset = () => {
-    setMessages([WELCOME_MESSAGE]);
+    setMessages([{ ...WELCOME_MESSAGE_TEMPLATE, timestamp: new Date() }]);
     setInput("");
     setSelectedImage(null);
+    if (!profileLoaded) {
+      setProfile(DEFAULT_PROFILE);
+    }
   };
 
   return (
@@ -358,11 +363,15 @@ export function ChatInterface() {
               </div>
             </div>
 
-            <ProfilePanel
-              profile={profile}
-              onProfileChange={setProfile}
-              currentBg={currentBg}
-            />
+            {profileLoaded ? (
+              <ProfilePanel
+                profile={profile}
+                onProfileChange={setProfile}
+                currentBg={currentBg}
+              />
+            ) : (
+              <div className="h-[360px] w-full animate-pulse rounded-xl bg-card/60 border border-border/40 backdrop-blur-md shadow-sm" />
+            )}
 
             {/* Reset */}
             <Button
