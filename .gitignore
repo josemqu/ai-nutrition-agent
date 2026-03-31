@@ -1,0 +1,8 @@
+.env
+env/
+__pycache__/
+.DS_Store
+.vscode/
+token.json
+credentials.json
+agent_errors.log
