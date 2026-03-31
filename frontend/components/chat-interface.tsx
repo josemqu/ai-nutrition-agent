@@ -69,6 +69,23 @@ export function ChatInterface() {
       if (!trimmed && !currentImage) return;
       if (isLoading) return;
 
+      setIsLoading(true);
+
+      // ── Step 0: Auto-fetch latest glucose ──
+      let latestBg = currentBg;
+      try {
+        const glucoseRes = await fetch("/api/glucose");
+        if (glucoseRes.ok) {
+          const glucoseData = await glucoseRes.json();
+          if (glucoseData.sgv) {
+            latestBg = glucoseData.sgv.toString();
+            setCurrentBg(latestBg);
+          }
+        }
+      } catch (e) {
+        console.error("Auto-sync glucose failed, using last known value", e);
+      }
+
       const userMsg: ChatMessage = {
         id: generateId(),
         role: "user",
@@ -89,7 +106,6 @@ export function ChatInterface() {
       setMessages((prev) => [...prev, userMsg, loadingMsg]);
       setInput("");
       setSelectedImage(null);
-      setIsLoading(true);
 
       const history = messages
         .filter((m) => m.id !== "welcome" && !m.isLoading)
@@ -103,11 +119,12 @@ export function ChatInterface() {
           body: JSON.stringify({
             message: trimmed,
             profile,
-            currentBg: currentBg ? parseFloat(currentBg) : undefined,
+            currentBg: latestBg ? parseFloat(latestBg) : undefined,
             imageData: currentImage ? currentImage : undefined,
             history,
           }),
         });
+
 
         if (!res.ok) {
           throw new Error("Failed to fetch stream");
@@ -120,40 +137,51 @@ export function ChatInterface() {
         let assistantContent = "";
         let nutritionData: any = undefined;
         let insulinData: any = undefined;
+        let buffer = "";
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Save the partial last line
 
           for (const line of lines) {
-            if (!line.trim()) continue;
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
+            
             try {
-              const parsed = JSON.parse(line);
+              const parsed = JSON.parse(trimmedLine);
+              let hasNewData = false;
+
               if (parsed.metadata) {
                 nutritionData = parsed.metadata.nutrition;
                 insulinData = parsed.metadata.insulin;
+                hasNewData = true;
               }
               if (parsed.text) {
                 assistantContent += parsed.text;
+                hasNewData = true;
               }
               
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { 
-                        ...m, 
-                        content: assistantContent, 
-                        nutrition: nutritionData, 
-                        insulin: insulinData,
-                      }
-                    : m
-                )
-              );
+              if (hasNewData) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { 
+                          ...m, 
+                          content: assistantContent, 
+                          nutrition: nutritionData, 
+                          insulin: insulinData,
+                          isLoading: false // Stop typing indicator once we have content
+                        }
+                      : m
+                  )
+                );
+              }
             } catch (e) {
-              console.error("Error parsing stream line", e);
+              console.error("Error parsing stream line", e, trimmedLine);
             }
           }
         }

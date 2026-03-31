@@ -298,13 +298,6 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
-        // Send initial metadata if exists
-        if (nutritionData || insulinData) {
-          controller.enqueue(
-            encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData } }) + "\n")
-          );
-        }
-
         const reader = streamResponse.body?.getReader();
         if (!reader) {
           controller.close();
@@ -337,6 +330,14 @@ export async function POST(req: NextRequest) {
             }
           }
         }
+
+        // Send metadata at the END for organic flow
+        if (nutritionData || insulinData) {
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData } }) + "\n")
+          );
+        }
+
         controller.close();
       },
     });
