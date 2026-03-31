@@ -10,6 +10,66 @@ function roundTo(value: number, step?: number): number {
   return parseFloat((Math.round(value / step) * step).toFixed(2));
 }
 
+// ── Helper for fetching URL ──
+const MAX_CONTENT_LENGTH = 8000;
+
+function htmlToText(html: string): string {
+  let text = html
+    .replace(/<(script|style|nav|footer|aside|header|noscript|iframe|svg|button)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return text;
+}
+
+function extractMainContent(html: string): string {
+  const articleMatch = html.match(/<(?:article|main)[^>]*>([\s\S]*?)<\/(?:article|main)>/i);
+  if (articleMatch) return htmlToText(articleMatch[1]);
+
+  const contentMatch = html.match(
+    /<div[^>]*(?:class|id)="[^"]*(?:recipe|content|post|entry|article|ingrediente|preparacion)[^"]*"[^>]*>([\s\S]{200,}?)<\/div>/i
+  );
+  if (contentMatch) return htmlToText(contentMatch[1]);
+
+  return htmlToText(html);
+}
+
+async function fetchUrlContent(url: string): Promise<string> {
+  try {
+    const parsedUrl = new URL(url);
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) return "Error: URL inválida.";
+    
+    // Default JS fetch with a generic user-agent to bypass basic blocks
+    const response = await fetch(parsedUrl.toString(), {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) return `Error al acceder al sitio: ${response.status}`;
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
+      return "El contenido no es texto legible.";
+    }
+
+    let content = extractMainContent(await response.text());
+    if (content.length > MAX_CONTENT_LENGTH) {
+      content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[...contenido truncado...]";
+    }
+    return content;
+  } catch (err) {
+    return "Error al conectarse a la URL.";
+  }
+}
+
 // ── Insulin calculation (deterministic, not LLM) ──
 function calculateInsulin(
   totalCarbs: number,
@@ -86,6 +146,7 @@ REGLAS DE RESPUESTA:
 6. Sin cantidades exactas, estimá con porciones estándar y aclaralo brevemente.
 8. No inventes datos. Si no conocés el IG, indicá "IG estimado" o "IG no disponible".
 9. Para comidas argentinas/latinoamericanas, aplicá conocimiento regional específico.
+10. Si el usuario te envía un link (URL), SIEMPRE usa la herramienta fetch_recipe_url para leer su contenido antes de analizar la receta. A menos que el usuario proporcione directamente los detalles.
 
 FORMATO:
 - Análisis nutricional breve (CH, proteínas, grasas, IG)
@@ -139,6 +200,24 @@ const TOOLS = [
           },
         },
         required: ["total_carbs", "foods_analyzed"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "fetch_recipe_url",
+      description:
+        "Visita un link (URL) de una receta o sitio web y extrae el texto legible. Útil si el usuario proporciona la URL de una receta (ej. de Thermomix) o sitio web para que la leas y analices.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "La URL a visitar. Debe empezar con http:// o https://",
+          },
+        },
+        required: ["url"],
       },
     },
   },
@@ -367,118 +446,114 @@ export async function POST(req: NextRequest) {
 
     // ── TEXT PATH: standard tool-call flow ──
 
-    // ── First LLM call — always non-streaming for tool detection ──
-    const firstResponse = await fetch(GROQ_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        tools: TOOLS,
-        tool_choice: "auto",
-        temperature: 0.3,
-        max_tokens: 1500,
-      }),
-    });
-
-
-    if (!firstResponse.ok) {
-      const err = await firstResponse.text();
-      console.error("Groq first-call error — status:", firstResponse.status, "body:", err);
-      
-      let errData: any = {};
-      try { errData = JSON.parse(err); } catch {}
-
-      // Return the Groq error details so the frontend can show a useful message
-      return NextResponse.json(
-        { 
-          error: "Error al comunicarse con el modelo de IA",
-          details: errData,
-          groqStatus: firstResponse.status,
-        },
-        { status: firstResponse.status === 429 ? 429 : 502 }
-      );
-    }
-
-    const firstData = await firstResponse.json();
-    const assistantMsg = firstData.choices?.[0]?.message;
-
-    if (!assistantMsg) {
-      return NextResponse.json({ error: "Respuesta inválida del modelo" }, { status: 502 });
-    }
-
     let finalMessages: any[] = [...messages];
-    let hasTools = false;
+    let loopCount = 0;
+    const MAX_LOOPS = 3;
+    let shouldStream = false;
 
-    // ── Handle tool calls ──
-    if (assistantMsg.tool_calls?.length > 0) {
-      hasTools = true;
-      finalMessages.push(assistantMsg); // Add the assistant message with tool calls
+    while (loopCount < MAX_LOOPS && !shouldStream) {
+      loopCount++;
 
-      for (const toolCall of assistantMsg.tool_calls) {
-        if (toolCall.function.name === "calculate_insulin") {
-          let args: any;
-          try {
-            args = JSON.parse(toolCall.function.arguments);
-          } catch {
-            args = { total_carbs: 0, foods_analyzed: [] };
-          }
+      const toolResponse = await fetch(GROQ_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: finalMessages,
+          tools: TOOLS,
+          tool_choice: "auto",
+          temperature: 0.3,
+          max_tokens: 1500,
+        }),
+      });
 
-          insulinData = calculateInsulin(
-            args.total_carbs,
-            profile,
-            args.current_bg ?? currentBg
-          );
-
-          if (args.foods_analyzed?.length > 0) {
-            // Coerce glycemic_index and glycemic_load to numbers (LLM may return strings)
-            const foods = args.foods_analyzed.map((f: any) => ({
-              ...f,
-              glycemic_index: f.glycemic_index != null ? parseFloat(String(f.glycemic_index)) || null : null,
-              glycemic_load: f.glycemic_load != null ? parseFloat(String(f.glycemic_load)) || null : null,
-            }));
-
-            const giValues = foods
-              .map((f: any) => f.glycemic_index)
-              .filter((gi: any): gi is number => typeof gi === "number" && !isNaN(gi));
-            const avgGi = giValues.length
-              ? parseFloat((giValues.reduce((a: number, b: number) => a + b, 0) / giValues.length).toFixed(0))
-              : null;
-
-            nutritionData = {
-              carbs: args.total_carbs,
-              glycemicIndex: avgGi,
-              glycemicLoad: avgGi && args.total_carbs
-                ? parseFloat(((avgGi * args.total_carbs) / 100).toFixed(1))
-                : null,
-              servingDescription: foods
-                .map((f: any) => `${f.name} (${f.amount})`)
-                .join(", "),
-            };
-          }
-
-          finalMessages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            name: "calculate_insulin",
-            content: JSON.stringify({
-              status: "success",
-              total_dose: insulinData.totalDose,
-              food_dose: insulinData.foodDose,
-              correction_dose: insulinData.correctionDose,
-              breakdown: insulinData.breakdown,
-            }),
-          });
-        }
+      if (!toolResponse.ok) {
+        const err = await toolResponse.text();
+        console.error("Groq tool error:", toolResponse.status, err);
+        let errData: any = {};
+        try { errData = JSON.parse(err); } catch {}
+        return NextResponse.json(
+          { error: "Error al comunicarse con el modelo de IA", details: errData, groqStatus: toolResponse.status },
+          { status: toolResponse.status === 429 ? 429 : 502 }
+        );
       }
-    }
 
+      const toolData = await toolResponse.json();
+      const assistantMsg = toolData.choices?.[0]?.message;
 
+      if (!assistantMsg) {
+        return NextResponse.json({ error: "Respuesta inválida del modelo" }, { status: 502 });
+      }
 
-    // ── FINAL STREAMING CALL ──
+      if (assistantMsg.tool_calls?.length > 0) {
+        finalMessages.push(assistantMsg);
+        let calledInsulin = false;
+
+        for (const toolCall of assistantMsg.tool_calls) {
+          if (toolCall.function.name === "calculate_insulin") {
+            calledInsulin = true;
+            let args: any;
+            try { args = JSON.parse(toolCall.function.arguments); } catch { args = { total_carbs: 0, foods_analyzed: [] }; }
+
+            insulinData = calculateInsulin(args.total_carbs, profile, args.current_bg ?? currentBg);
+
+            if (args.foods_analyzed?.length > 0) {
+              const foods = args.foods_analyzed.map((f: any) => ({
+                ...f,
+                glycemic_index: f.glycemic_index != null ? parseFloat(String(f.glycemic_index)) || null : null,
+                glycemic_load: f.glycemic_load != null ? parseFloat(String(f.glycemic_load)) || null : null,
+              }));
+
+              const giValues = foods
+                .map((f: any) => f.glycemic_index)
+                .filter((gi: any): gi is number => typeof gi === "number" && !isNaN(gi));
+              const avgGi = giValues.length
+                ? parseFloat((giValues.reduce((a: number, b: number) => a + b, 0) / giValues.length).toFixed(0))
+                : null;
+
+              nutritionData = {
+                carbs: args.total_carbs,
+                glycemicIndex: avgGi,
+                glycemicLoad: avgGi && args.total_carbs ? parseFloat(((avgGi * args.total_carbs) / 100).toFixed(1)) : null,
+                servingDescription: foods.map((f: any) => `${f.name} (${f.amount})`).join(", "),
+              };
+            }
+
+            finalMessages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              name: "calculate_insulin",
+              content: JSON.stringify({
+                status: "success",
+                total_dose: insulinData.totalDose,
+                food_dose: insulinData.foodDose,
+                correction_dose: insulinData.correctionDose,
+                breakdown: insulinData.breakdown,
+              }),
+            });
+          } else if (toolCall.function.name === "fetch_recipe_url") {
+            let args: any;
+            try { args = JSON.parse(toolCall.function.arguments); } catch { args = { url: "" }; }
+            const urlText = await fetchUrlContent(args.url);
+            finalMessages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              name: "fetch_recipe_url",
+              content: urlText,
+            });
+          }
+        }
+
+        if (calledInsulin) {
+          shouldStream = true;
+        }
+      } else {
+        shouldStream = true;
+      }
+    }    // ── FINAL STREAMING CALL ──
     const streamResponse = await fetch(GROQ_API_URL, {
       method: "POST",
       headers: {

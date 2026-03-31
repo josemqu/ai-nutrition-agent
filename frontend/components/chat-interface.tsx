@@ -165,23 +165,51 @@ export function ChatInterface() {
 
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
           let descriptiveError = "Ocurrió un problema de conexión.";
           
-          if (res.status === 429) {
-            descriptiveError = "Has alcanzado el límite de mensajes permitidos o de capacidad de la IA. Por favor, espera un momento antes de continuar.";
-          } else if (res.status === 401 || res.status === 403) {
-            descriptiveError = "Error de autenticación con el proveedor de IA. Verifica las claves API.";
-          } else if (errorData.details?.error?.message) {
+          if (errorData.details?.error?.message) {
             descriptiveError = errorData.details.error.message;
           } else if (errorData.error) {
             descriptiveError = errorData.error;
+          } else if (res.status === 429) {
+            descriptiveError = "Has alcanzado el límite de mensajes permitidos o de capacidad de la IA. Por favor, espera un momento antes de continuar.";
+          } else if (res.status === 401 || res.status === 403) {
+            descriptiveError = "Error de autenticación con el proveedor de IA. Verifica las claves API.";
           }
           
-          throw new Error(descriptiveError);
+          setMessages((prev) => {
+            const filtered = prev.filter((m) => m.id !== assistantId || (m.content !== "" && m.id === assistantId));
+            return [
+              ...filtered.map(m => m.id === assistantId ? { ...m, isLoading: false } : m),
+              {
+                id: generateId(),
+                role: "assistant",
+                content: `⚠️ **Error**: ${descriptiveError}`,
+                timestamp: new Date(),
+              },
+            ];
+          });
+          return;
         }
 
         const reader = res.body?.getReader();
-        if (!reader) throw new Error("No reader available");
+        if (!reader) {
+          setMessages((prev) => {
+            const filtered = prev.filter((m) => m.id !== assistantId || (m.content !== "" && m.id === assistantId));
+            return [
+              ...filtered.map(m => m.id === assistantId ? { ...m, isLoading: false } : m),
+              {
+                id: generateId(),
+                role: "assistant",
+                content: `⚠️ **Error**: No se pudo leer la respuesta del servidor.`,
+                timestamp: new Date(),
+              },
+            ];
+          });
+          return;
+        }
 
         const decoder = new TextDecoder();
         let assistantContent = "";
@@ -236,7 +264,9 @@ export function ChatInterface() {
           }
         }
       } catch (error: any) {
-        console.error("Streaming error:", error);
+        console.warn("Streaming error:", error);
+        const errorMessage = typeof error === "string" ? error : (error.message || "No pude conectarme con el servidor. Verificá tu conexión e intentá de nuevo.");
+        
         setMessages((prev) => {
           const filtered = prev.filter((m) => m.id !== assistantId || (m.content !== "" && m.id === assistantId));
           // If we had NO content yet, replace the loading message with the error
@@ -246,7 +276,7 @@ export function ChatInterface() {
             {
               id: generateId(),
               role: "assistant",
-              content: `⚠️ **Error**: ${error.message || "No pude conectarme con el servidor. Verificá tu conexión e intentá de nuevo."}`,
+              content: `⚠️ **Error**: ${errorMessage}`,
               timestamp: new Date(),
             },
           ];

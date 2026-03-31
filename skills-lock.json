@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "nextjs-react-typescript": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "computedHash": "eb995cc826bf48498e0e90969fc7dadfa2ec634002c26cfcfde565134cefa738"
+    },
+    "nextjs-shadcn": {
+      "source": "laguagu/claude-code-nextjs-skills",
+      "sourceType": "github",
+      "computedHash": "4b6a015df28ce76433f39b3e25633c541f802f7c9d37b6307efa168cd12dbf34"
+    },
+    "ui-design": {
+      "source": "tencentcloudbase/skills",
+      "sourceType": "github",
+      "computedHash": "9648bb0c6635617b243280b4017b05a84e2f16148a462f3d8ea36da22714434e"
+    }
+  }
+}
