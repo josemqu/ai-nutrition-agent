@@ -109,8 +109,18 @@ export function ChatMessageItem({ message }: ChatMessageProps) {
           </div>
         )}
 
-        {/* Timestamp */}
-        <span className="text-xs text-muted-foreground/60 px-1" suppressHydrationWarning>{timeStr}</span>
+        {/* Footer (Timestamp + Usage) */}
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-xs text-muted-foreground/60" suppressHydrationWarning>{timeStr}</span>
+          {!isUser && message.usage && message.usage.total_tokens > 0 && (
+            <span 
+              className="text-[10px] text-muted-foreground/50 font-mono bg-muted/40 px-1.5 py-0.5 rounded cursor-help transition-colors hover:bg-muted/60" 
+              title={`Prompt: ${message.usage.prompt_tokens} | Completion: ${message.usage.completion_tokens}`}
+            >
+              ⚡ {message.usage.total_tokens} tkns
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

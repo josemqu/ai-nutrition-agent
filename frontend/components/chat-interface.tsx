@@ -213,6 +213,7 @@ export function ChatInterface() {
         let assistantContent = "";
         let nutritionData: any = undefined;
         let insulinData: any = undefined;
+        let usageData: any = undefined;
         let buffer = "";
 
         while (true) {
@@ -234,6 +235,7 @@ export function ChatInterface() {
               if (parsed.metadata) {
                 nutritionData = parsed.metadata.nutrition;
                 insulinData = parsed.metadata.insulin;
+                usageData = parsed.metadata.usage;
                 hasNewData = true;
               }
               if (parsed.text) {
@@ -250,6 +252,7 @@ export function ChatInterface() {
                           content: assistantContent, 
                           nutrition: nutritionData, 
                           insulin: insulinData,
+                          usage: usageData,
                           isLoading: false // Stop typing indicator once we have content
                         }
                       : m

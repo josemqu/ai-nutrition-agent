@@ -242,6 +242,7 @@ export async function POST(req: NextRequest) {
 
     let nutritionData: NutritionData | undefined;
     let insulinData: InsulinCalculation | undefined;
+    let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
     const systemPrompt = buildSystemPrompt(profile.icr, profile.isf, profile.targetBg);
 
@@ -318,6 +319,12 @@ export async function POST(req: NextRequest) {
 
       const visionData = await visionRes.json();
       const visionText = visionData.choices?.[0]?.message?.content || "";
+      
+      if (visionData.usage) {
+        totalUsage.prompt_tokens += visionData.usage.prompt_tokens || 0;
+        totalUsage.completion_tokens += visionData.usage.completion_tokens || 0;
+        totalUsage.total_tokens += visionData.usage.total_tokens || 0;
+      }
 
       // Parse the JSON from the vision model
       let extractedFoods: any[] = [];
@@ -385,6 +392,7 @@ export async function POST(req: NextRequest) {
           temperature: 0.3,
           max_tokens: 800,
           stream: true,
+          stream_options: { include_usage: true },
         }),
       });
 
@@ -425,14 +433,21 @@ export async function POST(req: NextRequest) {
                     await sleep(15);
                     controller.enqueue(encoder.encode(JSON.stringify({ text }) + "\n"));
                   }
+                  
+                  const usage = json.usage || json.x_groq?.usage;
+                  if (usage) {
+                    totalUsage.prompt_tokens += usage.prompt_tokens || 0;
+                    totalUsage.completion_tokens += usage.completion_tokens || 0;
+                    totalUsage.total_tokens += usage.total_tokens || 0;
+                  }
                 } catch {}
               }
             }
           }
 
-          if (nutritionData || insulinData) {
+          if (nutritionData || insulinData || totalUsage.total_tokens > 0) {
             await sleep(300);
-            controller.enqueue(encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData } }) + "\n"));
+            controller.enqueue(encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData, usage: totalUsage } }) + "\n"));
           }
 
           controller.close();
@@ -483,6 +498,12 @@ export async function POST(req: NextRequest) {
 
       const toolData = await toolResponse.json();
       const assistantMsg = toolData.choices?.[0]?.message;
+
+      if (toolData.usage) {
+        totalUsage.prompt_tokens += toolData.usage.prompt_tokens || 0;
+        totalUsage.completion_tokens += toolData.usage.completion_tokens || 0;
+        totalUsage.total_tokens += toolData.usage.total_tokens || 0;
+      }
 
       if (!assistantMsg) {
         return NextResponse.json({ error: "Respuesta inválida del modelo" }, { status: 502 });
@@ -566,6 +587,7 @@ export async function POST(req: NextRequest) {
         temperature: 0.3,
         max_tokens: 1500,
         stream: true,
+        stream_options: { include_usage: true },
       }),
     });
 
@@ -624,6 +646,13 @@ export async function POST(req: NextRequest) {
                     encoder.encode(JSON.stringify({ text }) + "\n")
                   );
                 }
+
+                const usage = json.usage || json.x_groq?.usage;
+                if (usage) {
+                  totalUsage.prompt_tokens += usage.prompt_tokens || 0;
+                  totalUsage.completion_tokens += usage.completion_tokens || 0;
+                  totalUsage.total_tokens += usage.total_tokens || 0;
+                }
               } catch (e) {
                 // Ignore parse errors for incomplete chunks
               }
@@ -632,10 +661,10 @@ export async function POST(req: NextRequest) {
         }
 
         // Send metadata at the END for organic flow
-        if (nutritionData || insulinData) {
+        if (nutritionData || insulinData || totalUsage.total_tokens > 0) {
           await sleep(300); // Small pause before the card reveals iconically
           controller.enqueue(
-            encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData } }) + "\n")
+            encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData, usage: totalUsage } }) + "\n")
           );
         }
 

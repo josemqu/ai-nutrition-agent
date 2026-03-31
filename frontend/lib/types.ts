@@ -37,6 +37,7 @@ export interface ChatMessage {
   timestamp: Date;
   nutrition?: NutritionData;
   insulin?: InsulinCalculation;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   image?: string; // base64 string
   isLoading?: boolean;
 }
@@ -53,5 +54,6 @@ export interface ChatResponse {
   content: string;
   nutrition?: NutritionData;
   insulin?: InsulinCalculation;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   error?: string;
 }
