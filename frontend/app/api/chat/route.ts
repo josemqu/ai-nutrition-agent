@@ -304,7 +304,19 @@ export async function POST(req: NextRequest) {
     });
 
     if (!streamResponse.ok) {
-        return NextResponse.json({ error: "Error de streaming" }, { status: 502 });
+      const errorText = await streamResponse.text();
+      let errorData = {};
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { message: errorText };
+      }
+      
+      return NextResponse.json({ 
+        error: "Error del proveedor de IA",
+        details: errorData || "Error desconocido",
+        status: streamResponse.status
+      }, { status: streamResponse.status });
     }
 
     // Encoder/Decoder

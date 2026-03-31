@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,9 +23,14 @@ export function ProfilePanel({
   currentBg,
 }: ProfilePanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
 
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   const bgNum = parseFloat(currentBg) || 0;
+
   const bgStatus =
     bgNum === 0 ? null : bgNum < 70 ? "low" : bgNum > 180 ? "high" : "ok";
 
@@ -38,7 +43,7 @@ export function ProfilePanel({
   const bgLabel = { low: "Hipoglucemia", ok: "En objetivo", high: "Hiperglucemia" };
 
   return (
-    <Card className="border-border/40 bg-card/60 backdrop-blur-md shadow-sm">
+    <Card className="border-border/40 bg-card/60 backdrop-blur-md shadow-sm" suppressHydrationWarning>
       <CardHeader className="pb-1.5 pt-2.5 px-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -62,7 +67,7 @@ export function ProfilePanel({
         </div>
       </CardHeader>
 
-      {!collapsed && (
+      {hasMounted && !collapsed && (
         <CardContent className="space-y-3 px-3 pb-3">
           {/* Glucemia actual */}
           <div className="space-y-1.5 flex flex-col items-center py-1">
@@ -200,6 +205,7 @@ export function ProfilePanel({
           </div>
         </CardContent>
       )}
+
     </Card>
   );
 }

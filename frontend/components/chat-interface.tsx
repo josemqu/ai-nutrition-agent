@@ -19,6 +19,8 @@ const DEFAULT_PROFILE: UserProfile = {
   icr: 10,
   isf: 50,
   targetBg: 100,
+  correctionThreshold: 100,
+  rounding: 0.1,
 };
 
 function generateId() {
@@ -51,7 +53,8 @@ export function ChatInterface() {
     const savedProfile = localStorage.getItem("dm1-profile");
     if (savedProfile) {
       try {
-        setProfile(JSON.parse(savedProfile));
+        const parsed = JSON.parse(savedProfile);
+        setProfile({ ...DEFAULT_PROFILE, ...parsed });
       } catch (e) {
         console.warn("Could not parse saved profile", e);
       }
@@ -157,7 +160,20 @@ export function ChatInterface() {
 
 
         if (!res.ok) {
-          throw new Error("Failed to fetch stream");
+          const errorData = await res.json().catch(() => ({}));
+          let descriptiveError = "Ocurrió un problema de conexión.";
+          
+          if (res.status === 429) {
+            descriptiveError = "Has alcanzado el límite de mensajes permitidos o de capacidad de la IA. Por favor, espera un momento antes de continuar.";
+          } else if (res.status === 401 || res.status === 403) {
+            descriptiveError = "Error de autenticación con el proveedor de IA. Verifica las claves API.";
+          } else if (errorData.details?.error?.message) {
+            descriptiveError = errorData.details.error.message;
+          } else if (errorData.error) {
+            descriptiveError = errorData.error;
+          }
+          
+          throw new Error(descriptiveError);
         }
 
         const reader = res.body?.getReader();
@@ -215,16 +231,18 @@ export function ChatInterface() {
             }
           }
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Streaming error:", error);
         setMessages((prev) => {
-          const filtered = prev.filter((m) => m.id !== assistantId || m.content !== "");
+          const filtered = prev.filter((m) => m.id !== assistantId || (m.content !== "" && m.id === assistantId));
+          // If we had NO content yet, replace the loading message with the error
+          // If we had SOME content, append a new error message
           return [
             ...filtered.map(m => m.id === assistantId ? { ...m, isLoading: false } : m),
             {
               id: generateId(),
               role: "assistant",
-              content: "No pude conectarme con el servidor o el streaming falló. Verificá tu conexión e intentá de nuevo.",
+              content: `⚠️ **Error**: ${error.message || "No pude conectarme con el servidor. Verificá tu conexión e intentá de nuevo."}`,
               timestamp: new Date(),
             },
           ];
