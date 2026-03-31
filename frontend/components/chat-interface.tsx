@@ -63,6 +63,27 @@ export function ChatInterface() {
     localStorage.setItem("dm1-profile", JSON.stringify(profile));
   }, [profile]);
 
+  // BG Auto-update every 60 seconds
+  useEffect(() => {
+    const fetchBg = async () => {
+      try {
+        const res = await fetch("/api/glucose");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.sgv) {
+            setCurrentBg(data.sgv.toString());
+          }
+        }
+      } catch (e) {
+        console.error("Interval glucose fetch failed", e);
+      }
+    };
+
+    fetchBg(); // Initial fetch
+    const interval = setInterval(fetchBg, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
@@ -270,7 +291,6 @@ export function ChatInterface() {
               profile={profile}
               onProfileChange={setProfile}
               currentBg={currentBg}
-              onCurrentBgChange={setCurrentBg}
             />
 
             {/* Reset */}

@@ -15,14 +15,12 @@ interface ProfilePanelProps {
   profile: UserProfile;
   onProfileChange: (profile: UserProfile) => void;
   currentBg: string;
-  onCurrentBgChange: (bg: string) => void;
 }
 
 export function ProfilePanel({
   profile,
   onProfileChange,
   currentBg,
-  onCurrentBgChange,
 }: ProfilePanelProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -67,28 +65,32 @@ export function ProfilePanel({
       {!collapsed && (
         <CardContent className="space-y-3 px-3 pb-3">
           {/* Glucemia actual */}
-          <div className="space-y-1">
-            <label className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
-              <Droplets className="h-3 w-3" />
-              Glucemia actual (mg/dL)
-            </label>
-            <div className="relative">
-              <Input
-                type="number"
-                placeholder="ej. 140"
-                value={currentBg}
-                onChange={(e) => onCurrentBgChange(e.target.value)}
-                className="h-8 text-xs pr-16 bg-background/50"
-              />
-              {bgStatus && (
-                <span
-                  className={cn(
-                    "absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] px-1.5 py-0.5 rounded-full border font-medium",
-                    bgColor[bgStatus]
-                  )}
-                >
+          <div className="space-y-1.5 flex flex-col items-center py-1">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                <span className="text-[9px] font-bold text-primary tracking-wider uppercase">Live Sync</span>
+              </div>
+            </div>
+            
+            <div className="flex flex-col items-center">
+              <span className={cn(
+                "text-2xl font-bold tracking-tighter tabular-nums",
+                bgStatus === 'low' ? 'text-glucose-low' : bgStatus === 'high' ? 'text-glucose-high' : 'text-foreground'
+              )}>
+                {currentBg || "--"}
+                <span className="text-xs ml-1 font-medium text-muted-foreground">mg/dL</span>
+              </span>
+              
+              {bgStatus ? (
+                <span className={cn(
+                  "text-[10px] mt-0.5 font-medium px-2 py-0.5 rounded-md border",
+                  bgColor[bgStatus]
+                )}>
                   {bgLabel[bgStatus]}
                 </span>
+              ) : (
+                <span className="text-[10px] mt-0.5 font-medium text-muted-foreground/50">Esperando medición...</span>
               )}
             </div>
           </div>
