@@ -161,6 +161,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 });
     }
 
+    let nutritionData: NutritionData | undefined;
+    let insulinData: InsulinCalculation | undefined;
+
     const systemPrompt = buildSystemPrompt(profile.icr, profile.isf, profile.targetBg);
 
     // Build user message, appending currentBg if provided
@@ -181,7 +184,7 @@ export async function POST(req: NextRequest) {
         {
           type: "image_url",
           image_url: {
-            url: imageData, // base64 string
+            url: imageData,
           },
         },
       ];
@@ -189,9 +192,180 @@ export async function POST(req: NextRequest) {
 
     const messages = [
       { role: "system", content: systemPrompt },
-      ...history.slice(-8), // Keep last 8 messages for context
+      ...history.slice(-8),
       { role: "user", content: userContent },
     ];
+
+    // ── IMAGE PATH: vision model cannot use tools on Groq ──
+    if (imageData) {
+      // Step 1: Ask vision model for structured nutritional JSON (no tools)
+      const visionExtractionPrompt = [
+        { role: "system", content: `Sos un especialista en nutrición. Analizá la imagen de comida y devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto adicional):
+{
+  "description": "descripción breve del plato",
+  "foods": [
+    { "name": "nombre", "amount": "porción estimada", "carbs": número, "glycemic_index": número_o_null }
+  ],
+  "total_carbs": número,
+  "notes": "texto breve si es necesario"
+}` },
+        { role: "user", content: userContent },
+      ];
+
+      const visionRes = await fetch(GROQ_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "meta-llama/llama-4-scout-17b-16e-instruct",
+          messages: visionExtractionPrompt,
+          temperature: 0.2,
+          max_tokens: 800,
+        }),
+      });
+
+      if (!visionRes.ok) {
+        const err = await visionRes.text();
+        console.error("Groq vision error:", visionRes.status, err);
+        let errData: any = {};
+        try { errData = JSON.parse(err); } catch {}
+        return NextResponse.json(
+          { error: "Error al analizar la imagen", details: errData, groqStatus: visionRes.status },
+          { status: visionRes.status === 429 ? 429 : 502 }
+        );
+      }
+
+      const visionData = await visionRes.json();
+      const visionText = visionData.choices?.[0]?.message?.content || "";
+
+      // Parse the JSON from the vision model
+      let extractedFoods: any[] = [];
+      let totalCarbs = 0;
+      let visionDescription = "";
+      let visionNotes = "";
+
+      try {
+        const jsonMatch = visionText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          extractedFoods = (parsed.foods || []).map((f: any) => ({
+            ...f,
+            glycemic_index: f.glycemic_index != null ? parseFloat(String(f.glycemic_index)) || null : null,
+            glycemic_load: null,
+          }));
+          totalCarbs = parsed.total_carbs || 0;
+          visionDescription = parsed.description || "";
+          visionNotes = parsed.notes || "";
+        }
+      } catch (e) {
+        console.error("Failed to parse vision JSON:", e, visionText);
+      }
+
+      // Step 2: Calculate insulin deterministically
+      insulinData = calculateInsulin(totalCarbs, profile, currentBg);
+
+      if (extractedFoods.length > 0) {
+        const giValues = extractedFoods
+          .map((f: any) => f.glycemic_index)
+          .filter((gi: any): gi is number => typeof gi === "number" && !isNaN(gi));
+        const avgGi = giValues.length
+          ? parseFloat((giValues.reduce((a: number, b: number) => a + b, 0) / giValues.length).toFixed(0))
+          : null;
+
+        nutritionData = {
+          carbs: totalCarbs,
+          glycemicIndex: avgGi,
+          glycemicLoad: avgGi && totalCarbs ? parseFloat(((avgGi * totalCarbs) / 100).toFixed(1)) : null,
+          servingDescription: extractedFoods.map((f: any) => `${f.name} (${f.amount})`).join(", "),
+        };
+      }
+
+      // Step 3: Stream the final conversational response
+      const summaryMessages = [
+        { role: "system", content: systemPrompt },
+        ...history.slice(-8),
+        { role: "user", content: typeof userContent === "string" ? userContent : (userContent as any[]).find(c => c.type === "text")?.text || "Analizá esta imagen" },
+        {
+          role: "assistant",
+          content: `Analicé la imagen. ${visionDescription}${visionNotes ? ". " + visionNotes : ""}. Carbohidratos totales estimados: ${totalCarbs}g. ${insulinData.breakdown}`,
+        },
+        { role: "user", content: "Resumí los datos nutricionales brevemente y explicá la dosis calculada." },
+      ];
+
+      const streamResponse = await fetch(GROQ_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: summaryMessages,
+          temperature: 0.3,
+          max_tokens: 800,
+          stream: true,
+        }),
+      });
+
+      if (!streamResponse.ok) {
+        const errorText = await streamResponse.text();
+        let errorData = {};
+        try { errorData = JSON.parse(errorText); } catch {}
+        return NextResponse.json({ error: "Error del proveedor de IA", details: errorData }, { status: 502 });
+      }
+
+      const encoder = new TextEncoder();
+      const decoder = new TextDecoder();
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const reader = streamResponse.body?.getReader();
+          if (!reader) { controller.close(); return; }
+
+          const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              if (!trimmedLine || trimmedLine === "data: [DONE]") continue;
+              if (trimmedLine.startsWith("data: ")) {
+                try {
+                  const json = JSON.parse(trimmedLine.substring(6));
+                  const text = json.choices[0]?.delta?.content || "";
+                  if (text) {
+                    await sleep(15);
+                    controller.enqueue(encoder.encode(JSON.stringify({ text }) + "\n"));
+                  }
+                } catch {}
+              }
+            }
+          }
+
+          if (nutritionData || insulinData) {
+            await sleep(300);
+            controller.enqueue(encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData } }) + "\n"));
+          }
+
+          controller.close();
+        },
+      });
+
+      return new Response(stream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
+      });
+    }
+
+    // ── TEXT PATH: standard tool-call flow ──
 
     // ── First LLM call — always non-streaming for tool detection ──
     const firstResponse = await fetch(GROQ_API_URL, {
@@ -209,6 +383,7 @@ export async function POST(req: NextRequest) {
         max_tokens: 1500,
       }),
     });
+
 
     if (!firstResponse.ok) {
       const err = await firstResponse.text();
@@ -235,8 +410,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Respuesta inválida del modelo" }, { status: 502 });
     }
 
-    let nutritionData: NutritionData | undefined;
-    let insulinData: InsulinCalculation | undefined;
     let finalMessages: any[] = [...messages];
     let hasTools = false;
 

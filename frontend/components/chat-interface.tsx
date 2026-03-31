@@ -268,17 +268,35 @@ export function ChatInterface() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        alert("La imagen es demasiado pesada (máximo 10MB)");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setSelectedImage(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("La imagen es demasiado pesada (máximo 10MB)");
+      return;
     }
+
+    // Convert to JPEG via canvas — normalizes AVIF, HEIC, WebP, etc.
+    // which may not be supported by the Groq vision API
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      // Cap at 1024px on the longest side to reduce payload
+      const MAX = 1024;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const jpeg = canvas.toDataURL("image/jpeg", 0.85);
+      setSelectedImage(jpeg);
+      URL.revokeObjectURL(objectUrl);
+    };
+    img.onerror = () => {
+      alert("No se pudo leer la imagen. Probá con JPEG o PNG.");
+      URL.revokeObjectURL(objectUrl);
+    };
+    img.src = objectUrl;
   };
 
   const handleReset = () => {
