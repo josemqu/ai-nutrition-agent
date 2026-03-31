@@ -304,6 +304,8 @@ export async function POST(req: NextRequest) {
           return;
         }
 
+        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
         let buffer = "";
         while (true) {
           const { done, value } = await reader.read();
@@ -315,17 +317,22 @@ export async function POST(req: NextRequest) {
 
           for (const line of lines) {
             const trimmedLine = line.trim();
-            if (!trimmedLine || trimmedLine === "data: [DONE]") continue;
+            if (!trimmedLine) continue;
+            if (trimmedLine === "data: [DONE]") break;
 
             if (trimmedLine.startsWith("data: ")) {
               try {
-                const data = JSON.parse(trimmedLine.slice(6));
-                const text = data.choices[0]?.delta?.content || "";
+                const json = JSON.parse(trimmedLine.substring(6));
+                const text = json.choices[0]?.delta?.content || "";
                 if (text) {
-                  controller.enqueue(encoder.encode(JSON.stringify({ text }) + "\n"));
+                  // Artificial delay to make it more organic/slow
+                  await sleep(15); 
+                  controller.enqueue(
+                    encoder.encode(JSON.stringify({ text }) + "\n")
+                  );
                 }
               } catch (e) {
-                console.error("Error parsing stream chunk:", e);
+                // Ignore parse errors for incomplete chunks
               }
             }
           }
@@ -333,6 +340,7 @@ export async function POST(req: NextRequest) {
 
         // Send metadata at the END for organic flow
         if (nutritionData || insulinData) {
+          await sleep(300); // Small pause before the card reveals iconically
           controller.enqueue(
             encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData } }) + "\n")
           );
