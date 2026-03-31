@@ -54,6 +54,23 @@ export function ChatInterface() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Load profile from localStorage on mount
+  useEffect(() => {
+    const savedProfile = localStorage.getItem("dm1-profile");
+    if (savedProfile) {
+      try {
+        setProfile(JSON.parse(savedProfile));
+      } catch (e) {
+        console.warn("Could not parse saved profile", e);
+      }
+    }
+  }, []);
+
+  // Save profile to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("dm1-profile", JSON.stringify(profile));
+  }, [profile]);
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
