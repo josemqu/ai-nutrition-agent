@@ -165,8 +165,6 @@ export function ChatInterface() {
 
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}));
           let descriptiveError = "Ocurrió un problema de conexión.";
           
           if (errorData.details?.error?.message) {

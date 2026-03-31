@@ -253,8 +253,8 @@ export async function POST(req: NextRequest) {
     // Use a vision model if an image is provided
     // Note: llama-3.2-11b-vision-preview is the currently available vision model on Groq
     const model = imageData 
-      ? "meta-llama/llama-4-scout-17b-16e-instruct" 
-      : "llama-3.3-70b-versatile";
+      ? "llama-3.2-11b-vision-preview" 
+      : "llama-3.1-8b-instant";
 
     if (imageData) {
       // Vision API format
@@ -298,7 +298,7 @@ export async function POST(req: NextRequest) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "meta-llama/llama-4-scout-17b-16e-instruct",
+          model: "llama-3.2-11b-vision-preview",
           messages: visionExtractionPrompt,
           temperature: 0.2,
           max_tokens: 800,
@@ -380,7 +380,7 @@ export async function POST(req: NextRequest) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model,
           messages: summaryMessages,
           temperature: 0.3,
           max_tokens: 800,
@@ -561,7 +561,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model,
         messages: finalMessages,
         temperature: 0.3,
         max_tokens: 1500,
