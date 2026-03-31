@@ -1,42 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { ChatRequest, ChatResponse, NutritionData, InsulinCalculation } from "@/lib/types";
+import type { ChatRequest, ChatResponse, NutritionData, InsulinCalculation, UserProfile } from "@/lib/types";
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+// ── Helper for rounding ──
+function roundTo(value: number, step?: number): number {
+  if (!step || step <= 0) return parseFloat(value.toFixed(2));
+  return parseFloat((Math.round(value / step) * step).toFixed(2));
+}
+
 // ── Insulin calculation (deterministic, not LLM) ──
 function calculateInsulin(
   totalCarbs: number,
-  icr: number,
-  isf: number,
-  targetBg: number,
+  profile: UserProfile,
   currentBg?: number
 ): InsulinCalculation {
-  const foodDose = parseFloat((totalCarbs / icr).toFixed(2));
+  const { icr, isf, targetBg, correctionThreshold, rounding = 0.1 } = profile;
+  const threshold = correctionThreshold ?? targetBg;
 
+  const foodDoseRaw = totalCarbs / icr;
+  const foodDose = roundTo(foodDoseRaw, rounding);
+
+  let correctionDoseRaw = 0;
   let correctionDose = 0;
-  if (currentBg !== undefined && currentBg > targetBg) {
-    correctionDose = parseFloat(((currentBg - targetBg) / isf).toFixed(2));
+
+  if (currentBg !== undefined && currentBg >= threshold) {
+    correctionDoseRaw = (currentBg - targetBg) / isf;
+    correctionDose = roundTo(correctionDoseRaw, rounding);
   }
 
-  const totalDose = parseFloat((foodDose + correctionDose).toFixed(2));
+  const totalDose = roundTo(foodDose + correctionDose, rounding);
 
   const breakdownLines = [
     `• Carbohidratos totales: ${totalCarbs}g`,
-    `• Dosis de comida: ${totalCarbs}g ÷ ${icr} (ratio) = **${foodDose} unidades**`,
+    `• Dosis de comida: ${totalCarbs}g ÷ ${icr} (ICR) = **${foodDose} unidades**`,
   ];
 
   if (currentBg !== undefined) {
-    breakdownLines.push(
-      `• Glucemia actual: ${currentBg} mg/dL | Objetivo: ${targetBg} mg/dL`
-    );
-    if (correctionDose > 0) {
+    if (currentBg >= threshold) {
+      breakdownLines.push(
+        `• Glucemia actual (${currentBg}) ≥ Umbral (${threshold}). Meta: ${targetBg} mg/dL`
+      );
       breakdownLines.push(
         `• Dosis de corrección: (${currentBg} - ${targetBg}) ÷ ${isf} (ISF) = **${correctionDose} unidades**`
       );
     } else {
-      breakdownLines.push(`• No se requiere corrección (glucemia dentro del objetivo)`);
+      breakdownLines.push(
+        `• Glucemia (${currentBg}) por debajo del umbral de corrección (${threshold}). Sin dosis extra.`
+      );
     }
+  }
+
+  if (rounding !== 0.1) {
+    breakdownLines.push(`• *Cálculos redondeados a incrementos de ${rounding}U*`);
   }
 
   breakdownLines.push(`• **Total: ${totalDose} unidades de insulina rápida**`);
@@ -228,9 +245,7 @@ export async function POST(req: NextRequest) {
 
           insulinData = calculateInsulin(
             args.total_carbs,
-            profile.icr,
-            profile.isf,
-            profile.targetBg,
+            profile,
             args.current_bg ?? currentBg
           );
 

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Settings2, Droplets, Target, Zap, ChevronDown, ChevronUp } from "lucide-react";
+import { Settings2, Droplets, Target, Zap, ChevronDown, ChevronUp, Activity, RotateCcw } from "lucide-react";
 
 import type { UserProfile } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -40,53 +40,50 @@ export function ProfilePanel({
   const bgLabel = { low: "Hipoglucemia", ok: "En objetivo", high: "Hiperglucemia" };
 
   return (
-    <Card className="border-border/50 bg-card/80 backdrop-blur-sm shadow-sm">
-      <CardHeader className="pb-2 pt-3 px-4">
+    <Card className="border-border/40 bg-card/60 backdrop-blur-md shadow-sm">
+      <CardHeader className="pb-1.5 pt-2.5 px-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="rounded-md bg-primary/10 p-1.5">
-              <Settings2 className="h-4 w-4 text-primary" />
+              <Settings2 className="h-3.5 w-3.5 text-primary" />
             </div>
-            <CardTitle className="text-sm font-semibold">Mi perfil</CardTitle>
+            <CardTitle className="text-xs font-semibold">Mi perfil</CardTitle>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0"
+            className="h-6 w-6 p-0"
             onClick={() => setCollapsed(!collapsed)}
           >
             {collapsed ? (
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className="h-3.5 w-3.5" />
             ) : (
-              <ChevronUp className="h-4 w-4" />
+              <ChevronUp className="h-3.5 w-3.5" />
             )}
           </Button>
         </div>
       </CardHeader>
 
       {!collapsed && (
-        <CardContent className="space-y-4 px-4 pb-4">
+        <CardContent className="space-y-3 px-3 pb-3">
           {/* Glucemia actual */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Droplets className="h-3.5 w-3.5" />
-                Glucemia actual (mg/dL)
-              </label>
-            </div>
-
+          <div className="space-y-1">
+            <label className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+              <Droplets className="h-3 w-3" />
+              Glucemia actual (mg/dL)
+            </label>
             <div className="relative">
               <Input
                 type="number"
                 placeholder="ej. 140"
                 value={currentBg}
                 onChange={(e) => onCurrentBgChange(e.target.value)}
-                className="h-9 text-sm pr-20"
+                className="h-8 text-xs pr-16 bg-background/50"
               />
               {bgStatus && (
                 <span
                   className={cn(
-                    "absolute right-2 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 rounded-full border font-medium",
+                    "absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] px-1.5 py-0.5 rounded-full border font-medium",
                     bgColor[bgStatus]
                   )}
                 >
@@ -96,92 +93,108 @@ export function ProfilePanel({
             </div>
           </div>
 
-          <Separator className="opacity-40" />
+          <Separator className="opacity-20" />
 
           {/* Ratios de insulina */}
-          <div className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest opacity-70">
               Ratios de insulina
             </p>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-2">
               {/* ICR */}
-              <div className="space-y-1">
-                <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Zap className="h-3 w-3" />
+              <div className="space-y-0.5">
+                <label className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                  <Zap className="h-2.5 w-2.5" />
                   ICR (g/U)
                 </label>
                 <Input
                   type="number"
-                  min={1}
-                  max={50}
                   value={profile.icr}
                   onChange={(e) =>
                     onProfileChange({ ...profile, icr: parseFloat(e.target.value) || 10 })
                   }
-                  className="h-8 text-sm text-center"
+                  className="h-7 text-xs text-center bg-background/30"
                 />
               </div>
 
               {/* ISF */}
-              <div className="space-y-1">
-                <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Droplets className="h-3 w-3" />
+              <div className="space-y-0.5">
+                <label className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                  <Droplets className="h-2.5 w-2.5" />
                   ISF (mg/U)
                 </label>
                 <Input
                   type="number"
-                  min={10}
-                  max={200}
                   value={profile.isf}
                   onChange={(e) =>
                     onProfileChange({ ...profile, isf: parseFloat(e.target.value) || 50 })
                   }
-                  className="h-8 text-sm text-center"
+                  className="h-7 text-xs text-center bg-background/30"
                 />
               </div>
 
               {/* Target BG */}
-              <div className="space-y-1">
-                <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Target className="h-3 w-3" />
-                  Objetivo
+              <div className="space-y-0.5">
+                <label className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                  <Target className="h-2.5 w-2.5" />
+                  Meta (mg)
                 </label>
                 <Input
                   type="number"
-                  min={70}
-                  max={200}
                   value={profile.targetBg}
                   onChange={(e) =>
                     onProfileChange({ ...profile, targetBg: parseFloat(e.target.value) || 100 })
                   }
-                  className="h-8 text-sm text-center"
+                  className="h-7 text-xs text-center bg-background/30"
                 />
+              </div>
+
+              {/* Threshold */}
+              <div className="space-y-0.5">
+                <label className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                  <Activity className="h-2.5 w-2.5" />
+                  Umbral (mg)
+                </label>
+                <Input
+                  type="number"
+                  value={profile.correctionThreshold || profile.targetBg}
+                  onChange={(e) =>
+                    onProfileChange({ ...profile, correctionThreshold: parseFloat(e.target.value) })
+                  }
+                  className="h-7 text-xs text-center bg-background/30"
+                />
+              </div>
+
+              {/* Rounding */}
+              <div className="space-y-0.5 col-span-2">
+                <label className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                  <RotateCcw className="h-2.5 w-2.5" />
+                  Redondeo (Unidades)
+                </label>
+                <select
+                  value={profile.rounding || 0.1}
+                  onChange={(e) =>
+                    onProfileChange({ ...profile, rounding: parseFloat(e.target.value) })
+                  }
+                  className="flex h-7 w-full rounded-md border border-input bg-background/30 px-2 py-1 text-[10px] focus:outline-none"
+                >
+                  <option value={0.1}>Preciso (0.1 U)</option>
+                  <option value={0.5}>Medias (0.5 U)</option>
+                  <option value={1.0}>Enteras (1.0 U)</option>
+                </select>
               </div>
             </div>
           </div>
 
           {/* Legend */}
-          <div className="rounded-lg bg-muted/40 p-2.5 space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Leyenda</p>
-            <div className="grid grid-cols-1 gap-0.5 text-xs text-muted-foreground/80">
-              <span>ICR = gramos de CH por 1 unidad de insulina</span>
-              <span>ISF = mg/dL que baja 1 unidad de insulina</span>
-              <span>Objetivo = glucemia meta en mg/dL</span>
+          <div className="rounded-md bg-muted/30 p-2 border border-border/20">
+            <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60 mb-1">Guía rápida</p>
+            <div className="grid grid-cols-1 gap-0.5 text-[9px] text-muted-foreground/90 leading-tight">
+              <p>• <span className="font-medium text-primary/80">ICR:</span> Gramos HC cubiertos por 1U</p>
+              <p>• <span className="font-medium text-primary/80">ISF:</span> mg/dL que baja 1U</p>
+              <p>• <span className="font-medium text-primary/80">Meta/Umbral:</span> Objetivo y inicio corr.</p>
             </div>
-          </div>
-
-          {/* Quick reference badges */}
-          <div className="flex flex-wrap gap-1.5">
-            <Badge variant="secondary" className="text-xs font-normal">
-              1U = {profile.icr}g CH
-            </Badge>
-            <Badge variant="secondary" className="text-xs font-normal">
-              1U ↓{profile.isf} mg/dL
-            </Badge>
-            <Badge variant="secondary" className="text-xs font-normal">
-              Meta: {profile.targetBg} mg/dL
-            </Badge>
           </div>
         </CardContent>
       )}

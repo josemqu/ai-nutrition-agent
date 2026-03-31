@@ -21,14 +21,6 @@ const DEFAULT_PROFILE: UserProfile = {
   targetBg: 100,
 };
 
-const QUICK_PROMPTS = [
-  "🍝 ¿Cuántos CH tiene un plato de fideos con salsa bolognesa (200g pasta)?",
-  "🍕 Pizza de muzzarella, 2 porciones medianas",
-  "🥝 Una naranja mediana y un yogur entero",
-  "🍚 Arroz con pollo, porción de 250g",
-  "🥐 Medialunas: 3 unidades + café con leche",
-];
-
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -280,28 +272,6 @@ export function ChatInterface() {
               currentBg={currentBg}
               onCurrentBgChange={setCurrentBg}
             />
-
-            {/* Quick prompts */}
-            <div className="space-y-2">
-              <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Consultas rápidas
-              </p>
-              <div className="space-y-1.5">
-                {QUICK_PROMPTS.map((prompt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => sendMessage(prompt)}
-                    disabled={isLoading}
-                    className={cn(
-                      "w-full text-left text-xs rounded-lg px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors leading-relaxed",
-                      isLoading && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             {/* Reset */}
             <Button

@@ -3,9 +3,11 @@
 export type MessageRole = "user" | "assistant";
 
 export interface UserProfile {
-  icr: number;       // Insulin-to-Carb Ratio (g carbs per 1 unit)
-  isf: number;       // Insulin Sensitivity Factor (mg/dL per 1 unit)
-  targetBg: number;  // Target blood glucose in mg/dL
+  icr: number;               // Insulin-to-Carb Ratio (g carbs per 1 unit)
+  isf: number;               // Insulin Sensitivity Factor (mg/dL per 1 unit)
+  targetBg: number;          // Target blood glucose in mg/dL
+  correctionThreshold?: number; // BG at which to start correcting (if different from target)
+  rounding?: number;         // Rounding increment (0.1, 0.5, 1.0)
 }
 
 export interface NutritionData {
