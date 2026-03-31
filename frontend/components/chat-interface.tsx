@@ -41,6 +41,7 @@ export function ChatInterface() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [currentBg, setCurrentBg] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -48,7 +49,7 @@ export function ChatInterface() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load profile from localStorage on mount
+  // Load profile from localStorage on mount — sets profileLoaded=true AFTER setProfile
   useEffect(() => {
     const savedProfile = localStorage.getItem("dm1-profile");
     if (savedProfile) {
@@ -59,12 +60,15 @@ export function ChatInterface() {
         console.warn("Could not parse saved profile", e);
       }
     }
+    // This state update happens in a separate render after the profile is set
+    setProfileLoaded(true);
   }, []);
 
-  // Save profile to localStorage whenever it changes
+  // Save profile to localStorage — only runs after profileLoaded is true (next render cycle)
   useEffect(() => {
+    if (!profileLoaded) return;
     localStorage.setItem("dm1-profile", JSON.stringify(profile));
-  }, [profile]);
+  }, [profile, profileLoaded]);
 
   // BG Auto-update every 60 seconds
   useEffect(() => {
