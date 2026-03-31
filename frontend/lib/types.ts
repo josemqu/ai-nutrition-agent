@@ -35,6 +35,7 @@ export interface ChatMessage {
   timestamp: Date;
   nutrition?: NutritionData;
   insulin?: InsulinCalculation;
+  image?: string; // base64 string
   isLoading?: boolean;
 }
 
@@ -42,6 +43,7 @@ export interface ChatRequest {
   message: string;
   profile: UserProfile;
   currentBg?: number;
+  imageData?: string; // base64 payload
   history: Array<{ role: MessageRole; content: string }>;
 }
 

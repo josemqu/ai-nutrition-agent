@@ -44,6 +44,7 @@ const WELCOME_MESSAGE: ChatMessage = {
 export function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [currentBg, setCurrentBg] = useState("");
@@ -51,6 +52,7 @@ export function ChatInterface() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -60,19 +62,24 @@ export function ChatInterface() {
   }, [messages]);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, imageToUpload?: string | null) => {
       const trimmed = text.trim();
-      if (!trimmed || isLoading) return;
+      const currentImage = imageToUpload || selectedImage;
+
+      if (!trimmed && !currentImage) return;
+      if (isLoading) return;
 
       const userMsg: ChatMessage = {
         id: generateId(),
         role: "user",
         content: trimmed,
+        image: currentImage || undefined,
         timestamp: new Date(),
       };
 
+      const assistantId = generateId();
       const loadingMsg: ChatMessage = {
-        id: generateId(),
+        id: assistantId,
         role: "assistant",
         content: "",
         timestamp: new Date(),
@@ -81,9 +88,9 @@ export function ChatInterface() {
 
       setMessages((prev) => [...prev, userMsg, loadingMsg]);
       setInput("");
+      setSelectedImage(null);
       setIsLoading(true);
 
-      // Build history (exclude welcome and loading)
       const history = messages
         .filter((m) => m.id !== "welcome" && !m.isLoading)
         .slice(-10)
@@ -97,37 +104,69 @@ export function ChatInterface() {
             message: trimmed,
             profile,
             currentBg: currentBg ? parseFloat(currentBg) : undefined,
+            imageData: currentImage ? currentImage : undefined,
             history,
           }),
         });
 
-        const data: ChatResponse = await res.json();
+        if (!res.ok) {
+          throw new Error("Failed to fetch stream");
+        }
 
-        const assistantMsg: ChatMessage = {
-          id: generateId(),
-          role: "assistant",
-          content: data.error
-            ? `Lo siento, hubo un error: ${data.error}`
-            : data.content,
-          timestamp: new Date(),
-          nutrition: data.nutrition,
-          insulin: data.insulin,
-        };
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No reader available");
 
+        const decoder = new TextDecoder();
+        let assistantContent = "";
+        let nutritionData: any = undefined;
+        let insulinData: any = undefined;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.metadata) {
+                nutritionData = parsed.metadata.nutrition;
+                insulinData = parsed.metadata.insulin;
+              }
+              if (parsed.text) {
+                assistantContent += parsed.text;
+              }
+              
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { 
+                        ...m, 
+                        content: assistantContent, 
+                        nutrition: nutritionData, 
+                        insulin: insulinData,
+                      }
+                    : m
+                )
+              );
+            } catch (e) {
+              console.error("Error parsing stream line", e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Streaming error:", error);
         setMessages((prev) => {
-          const filtered = prev.filter((m) => !m.isLoading);
-          return [...filtered, assistantMsg];
-        });
-      } catch {
-        setMessages((prev) => {
-          const filtered = prev.filter((m) => !m.isLoading);
+          const filtered = prev.filter((m) => m.id !== assistantId || m.content !== "");
           return [
-            ...filtered,
+            ...filtered.map(m => m.id === assistantId ? { ...m, isLoading: false } : m),
             {
               id: generateId(),
               role: "assistant",
-              content:
-                "No pude conectarme con el servidor. Verificá tu conexión e intentá de nuevo.",
+              content: "No pude conectarme con el servidor o el streaming falló. Verificá tu conexión e intentá de nuevo.",
               timestamp: new Date(),
             },
           ];
@@ -136,8 +175,9 @@ export function ChatInterface() {
         setIsLoading(false);
       }
     },
-    [isLoading, messages, profile, currentBg]
+    [isLoading, messages, profile, currentBg, selectedImage]
   );
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -146,9 +186,25 @@ export function ChatInterface() {
     }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert("La imagen es demasiado pesada (máximo 10MB)");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelectedImage(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleReset = () => {
     setMessages([WELCOME_MESSAGE]);
     setInput("");
+    setSelectedImage(null);
   };
 
   return (
@@ -275,7 +331,26 @@ export function ChatInterface() {
         </div>
 
         {/* Input area */}
-        <div className="border-t border-border/40 bg-background/80 backdrop-blur-sm p-4">
+        <div className="border-t border-border/40 bg-background/80 backdrop-blur-sm p-4 relative">
+          {/* Image preview */}
+          {selectedImage && (
+            <div className="absolute bottom-[calc(100%+1rem)] left-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+              <div className="relative h-24 w-24 rounded-lg border border-border/80 shadow-md bg-card group overflow-hidden">
+                <img
+                  src={selectedImage}
+                  alt="preview"
+                  className="h-full w-full object-cover"
+                />
+                <button
+                  onClick={() => setSelectedImage(null)}
+                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <span className="text-sm font-bold">×</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Info bar */}
           <div className="flex items-center justify-between mb-2 text-xs text-muted-foreground/60">
             <span>
@@ -286,18 +361,59 @@ export function ChatInterface() {
           </div>
 
           <div className="flex gap-2 items-end">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageUpload}
+              disabled={isLoading}
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              className={cn(
+                "h-[52px] w-12 shrink-0 border-border/40",
+                selectedImage && "text-primary border-primary/40 bg-primary/5"
+              )}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
+                <line x1="16" x2="22" y1="5" y2="5" />
+                <line x1="19" x2="19" y1="2" y2="8" />
+                <circle cx="9" cy="9" r="2" />
+                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+              </svg>
+            </Button>
             <Textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Describí tu comida o receta... (ej: 'Voy a comer milanesa con puré, porción grande')"
-              className="min-h-[52px] max-h-32 resize-none text-sm flex-1 scrollbar-hide"
+              placeholder={
+                selectedImage
+                  ? "Describí esta imagen..."
+                  : "Describí tu comida o receta... (ej: 'Voy a comer milanesa con puré, porción grande')"
+              }
+              className="min-h-[52px] max-h-32 resize-none text-sm flex-1 scrollbar-hide focus-visible:ring-primary/20"
               disabled={isLoading}
             />
             <Button
               onClick={() => sendMessage(input)}
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || (!input.trim() && !selectedImage)}
               size="icon"
               className="h-[52px] w-12 shrink-0"
             >

@@ -78,12 +78,21 @@ export function ChatMessageItem({ message }: ChatMessageProps) {
         {/* Bubble */}
         <div
           className={cn(
-            "rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm",
+            "rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm overflow-hidden",
             isUser
               ? "bg-primary text-primary-foreground rounded-br-sm"
               : "bg-card border border-border/50 text-foreground rounded-bl-sm"
           )}
         >
+          {message.image && (
+            <div className="mb-3 rounded-lg overflow-hidden border border-border/20 bg-background/20">
+              <img
+                src={message.image}
+                alt="Uploaded food"
+                className="max-h-64 w-full object-cover"
+              />
+            </div>
+          )}
           {message.isLoading ? (
             <TypingIndicator />
           ) : (
@@ -101,7 +110,7 @@ export function ChatMessageItem({ message }: ChatMessageProps) {
         )}
 
         {/* Timestamp */}
-        <span className="text-xs text-muted-foreground/60 px-1">{timeStr}</span>
+        <span className="text-xs text-muted-foreground/60 px-1" suppressHydrationWarning>{timeStr}</span>
       </div>
     </div>
   );

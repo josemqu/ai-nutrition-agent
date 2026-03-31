@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body: ChatRequest = await req.json();
-    const { message, profile, currentBg, history } = body;
+    const { message, profile, currentBg, history, imageData } = body;
 
     if (!message?.trim()) {
       return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 });
@@ -146,9 +146,27 @@ export async function POST(req: NextRequest) {
     const systemPrompt = buildSystemPrompt(profile.icr, profile.isf, profile.targetBg);
 
     // Build user message, appending currentBg if provided
-    const userContent = currentBg
+    let userContent: any = currentBg
       ? `${message}\n\n[Glucemia actual del usuario: ${currentBg} mg/dL]`
       : message;
+
+    // Use a vision model if an image is provided
+    const model = imageData 
+      ? "llama-3.2-90b-vision-preview" 
+      : "llama-3.3-70b-versatile";
+
+    if (imageData) {
+      // Vision API format
+      userContent = [
+        { type: "text", text: userContent },
+        {
+          type: "image_url",
+          image_url: {
+            url: imageData, // base64 string
+          },
+        },
+      ];
+    }
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -156,7 +174,7 @@ export async function POST(req: NextRequest) {
       { role: "user", content: userContent },
     ];
 
-    // ── First LLM call ──
+    // ── First LLM call — always non-streaming for tool detection ──
     const firstResponse = await fetch(GROQ_API_URL, {
       method: "POST",
       headers: {
@@ -164,7 +182,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        model,
         messages,
         tools: TOOLS,
         tool_choice: "auto",
@@ -191,32 +209,23 @@ export async function POST(req: NextRequest) {
 
     let nutritionData: NutritionData | undefined;
     let insulinData: InsulinCalculation | undefined;
+    let finalMessages: any[] = [...messages];
+    let hasTools = false;
 
     // ── Handle tool calls ──
     if (assistantMsg.tool_calls?.length > 0) {
-      const updatedMessages = [...messages, assistantMsg];
+      hasTools = true;
+      finalMessages.push(assistantMsg); // Add the assistant message with tool calls
 
       for (const toolCall of assistantMsg.tool_calls) {
         if (toolCall.function.name === "calculate_insulin") {
-          let args: {
-            total_carbs: number;
-            current_bg?: number;
-            foods_analyzed?: Array<{
-              name: string;
-              amount: string;
-              carbs: number;
-              glycemic_index?: number;
-              glycemic_load?: number;
-            }>;
-          };
-
+          let args: any;
           try {
             args = JSON.parse(toolCall.function.arguments);
           } catch {
             args = { total_carbs: 0, foods_analyzed: [] };
           }
 
-          // Perform deterministic calculation
           insulinData = calculateInsulin(
             args.total_carbs,
             profile.icr,
@@ -225,15 +234,12 @@ export async function POST(req: NextRequest) {
             args.current_bg ?? currentBg
           );
 
-          // Build nutrition summary from foods_analyzed
-          if (args.foods_analyzed && args.foods_analyzed.length > 0) {
-            const mainFood = args.foods_analyzed[0];
-            // Aggregate IG if available
+          if (args.foods_analyzed?.length > 0) {
             const giValues = args.foods_analyzed
-              .map((f) => f.glycemic_index)
-              .filter((gi): gi is number => typeof gi === "number");
+              .map((f: any) => f.glycemic_index)
+              .filter((gi: any): gi is number => typeof gi === "number");
             const avgGi = giValues.length
-              ? parseFloat((giValues.reduce((a, b) => a + b, 0) / giValues.length).toFixed(0))
+              ? parseFloat((giValues.reduce((a: number, b: number) => a + b, 0) / giValues.length).toFixed(0))
               : null;
 
             nutritionData = {
@@ -243,15 +249,13 @@ export async function POST(req: NextRequest) {
                 ? parseFloat(((avgGi * args.total_carbs) / 100).toFixed(1))
                 : null,
               servingDescription: args.foods_analyzed
-                .map((f) => `${f.name} (${f.amount})`)
+                .map((f: any) => `${f.name} (${f.amount})`)
                 .join(", "),
             };
           }
 
-          // Push tool result back to messages
-          updatedMessages.push({
+          finalMessages.push({
             role: "tool",
-            // @ts-expect-error - Groq SDK type
             tool_call_id: toolCall.id,
             name: "calculate_insulin",
             content: JSON.stringify({
@@ -264,47 +268,87 @@ export async function POST(req: NextRequest) {
           });
         }
       }
-
-      // ── Second LLM call to get final response ──
-      const secondResponse = await fetch(GROQ_API_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "meta-llama/llama-4-scout-17b-16e-instruct",
-          messages: updatedMessages,
-          temperature: 0.3,
-          max_tokens: 1500,
-        }),
-      });
-
-      if (!secondResponse.ok) {
-        return NextResponse.json(
-          { error: "Error al generar la respuesta final" },
-          { status: 502 }
-        );
-      }
-
-      const secondData = await secondResponse.json();
-      const finalContent = secondData.choices?.[0]?.message?.content ?? "";
-
-      const result: ChatResponse = {
-        content: finalContent,
-        nutrition: nutritionData,
-        insulin: insulinData,
-      };
-
-      return NextResponse.json(result);
     }
 
-    // ── No tool calls — direct text response ──
-    const result: ChatResponse = {
-      content: assistantMsg.content ?? "",
-    };
 
-    return NextResponse.json(result);
+
+    // ── FINAL STREAMING CALL ──
+    const streamResponse = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: finalMessages,
+        temperature: 0.3,
+        max_tokens: 1500,
+        stream: true,
+      }),
+    });
+
+    if (!streamResponse.ok) {
+        return NextResponse.json({ error: "Error de streaming" }, { status: 502 });
+    }
+
+    // Encoder/Decoder
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Send initial metadata if exists
+        if (nutritionData || insulinData) {
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ metadata: { nutrition: nutritionData, insulin: insulinData } }) + "\n")
+          );
+        }
+
+        const reader = streamResponse.body?.getReader();
+        if (!reader) {
+          controller.close();
+          return;
+        }
+
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine || trimmedLine === "data: [DONE]") continue;
+
+            if (trimmedLine.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(trimmedLine.slice(6));
+                const text = data.choices[0]?.delta?.content || "";
+                if (text) {
+                  controller.enqueue(encoder.encode(JSON.stringify({ text }) + "\n"));
+                }
+              } catch (e) {
+                console.error("Error parsing stream chunk:", e);
+              }
+            }
+          }
+        }
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      },
+    });
+
   } catch (error) {
     console.error("Chat route error:", error);
     return NextResponse.json(
@@ -313,3 +357,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

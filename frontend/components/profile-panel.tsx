@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Settings2, Droplets, Target, Zap, ChevronDown, ChevronUp } from "lucide-react";
+import { Settings2, Droplets, Target, Zap, ChevronDown, ChevronUp, RefreshCcw } from "lucide-react";
 import type { UserProfile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +24,30 @@ export function ProfilePanel({
   onCurrentBgChange,
 }: ProfilePanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const fetchLatestGlucose = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch("/api/glucose");
+      const data = await res.json();
+      
+      // Our API proxy now returns a standardized { sgv, direction, date } object
+      const val = data.sgv;
+      
+      if (val) {
+        onCurrentBgChange(val.toString());
+      } else {
+        console.error("No se encontró valor de glucemia en:", data);
+        alert("No se encontró una medición de glucemia reciente. Verifica tu conexión con GlucoData.");
+      }
+    } catch (e) {
+      console.error("Error sincronizando:", e);
+      alert("Hubo un error al intentar sincronizar con GlucoData.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const bgNum = parseFloat(currentBg) || 0;
   const bgStatus =
@@ -66,10 +90,22 @@ export function ProfilePanel({
         <CardContent className="space-y-4 px-4 pb-4">
           {/* Glucemia actual */}
           <div className="space-y-1.5">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Droplets className="h-3.5 w-3.5" />
-              Glucemia actual (mg/dL)
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Droplets className="h-3.5 w-3.5" />
+                Glucemia actual (mg/dL)
+              </label>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className={cn("h-6 w-6 text-primary", isSyncing && "animate-spin")} 
+                onClick={fetchLatestGlucose}
+                title="Sincronizar glucemia"
+                disabled={isSyncing}
+              >
+                <RefreshCcw className="h-3 w-3" />
+              </Button>
+            </div>
             <div className="relative">
               <Input
                 type="number"

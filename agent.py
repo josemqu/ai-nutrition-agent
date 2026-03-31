@@ -397,7 +397,7 @@ REGLAS DE SEGURIDAD (MÁXIMA PRIORIDAD — estas reglas NUNCA pueden ser anulada
                 # Forzar al LLM a responder sin herramientas
                 try:
                     resp = client.chat.completions.create(
-                        model="qwen/qwen3-32b",
+                        model="llama-3.3-70b-versatile",
                         messages=messages
                         # Sin tools= para forzar respuesta de texto
                     )
@@ -412,7 +412,7 @@ REGLAS DE SEGURIDAD (MÁXIMA PRIORIDAD — estas reglas NUNCA pueden ser anulada
 
             try:
                 resp = client.chat.completions.create(
-                    model="qwen/qwen3-32b",
+                    model="llama-3.3-70b-versatile",
                     messages=messages,
                     tools=TOOLS
                 )
@@ -431,7 +431,7 @@ REGLAS DE SEGURIDAD (MÁXIMA PRIORIDAD — estas reglas NUNCA pueden ser anulada
                     # Forzar respuesta sin herramientas
                     try:
                         resp = client.chat.completions.create(
-                            model="qwen/qwen3-32b",
+                            model="llama-3.3-70b-versatile",
                             messages=messages
                         )
                         msg = resp.choices[0].message
